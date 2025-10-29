@@ -40,7 +40,7 @@ Votre arborescence de projet devrait ressembler à ceci :
 
 ```
 /votre_projet/
-├── transcribe_vosk.py      <-- Votre script Python
+├── python micro_whisper.py <-- Votre script Python
 └── vosk-model-fr-0.22/    <-- Le dossier du modèle décompressé
     ├── am/
     ├── conf/
