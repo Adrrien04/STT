@@ -4,12 +4,9 @@ import time
 import wave
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
 from src.utils.ConnectionManager import ConnectionManager
 from src.utils.AIManager import AIManager
 from dotenv import load_dotenv
-import os
-
 
 load_dotenv()
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "http://localhost:3000")
@@ -20,7 +17,7 @@ app = FastAPI()
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[ALLOW_ORIGINS],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -32,25 +29,21 @@ manager = ConnectionManager()
 os.makedirs("audio_chunks", exist_ok=True)
 
 # Initialize AI Manager
-SAMPLERATE = int(os.getenv("SAMPLERATE", 48000))
-
-ai_manager = AIManager("model", SAMPLERATE)
+ai_manager = AIManager("../vosk-model-small-fr-0.22", SAMPLERATE)
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
+    await websocket.accept()  # Accept immediately
     chunk_counter = 0
     session_id = int(time.time())  # Unique session ID
 
-    # Create a recognizer for this session using AIManager
+    # Create a recognizer for this session
     recognizer = ai_manager.create_recognizer()
 
     try:
         gpu_status = ai_manager.get_gpu_status()
-        await websocket.send_text(
-            f"Connected to speech-to-text service (Vosk on {gpu_status})"
-        )
+        await websocket.send_text(f"Connected to speech-to-text service (Vosk on {gpu_status})")
 
         while True:
             data = await websocket.receive_text()
@@ -82,19 +75,13 @@ async def websocket_endpoint(websocket: WebSocket):
                     )
 
                     if transcribed_text:
-                        print(
-                            f"Transcribed (chunk {chunk_counter}): {transcribed_text}"
-                        )
-                        await websocket.send_text(f"Transcribed: {transcribed_text}")
+                        await websocket.send_text(f'{{"type":"final","text":"{transcribed_text}"}}')
                     elif partial_text:
-                        print(f"Partial (chunk {chunk_counter}): {partial_text}")
-                        await websocket.send_text(f"Partial: {partial_text}")
+                        await websocket.send_text(f'{{"type":"partial","text":"{partial_text}"}}')
 
                 except Exception as e:
                     print(f"Error processing audio file: {e}")
-                    await websocket.send_text(
-                        f"Error processing chunk {chunk_counter}: {str(e)}"
-                    )
+                    await websocket.send_text(f'{{"type":"error","text":"{str(e)}"}}')
 
                 chunk_counter += 1
 

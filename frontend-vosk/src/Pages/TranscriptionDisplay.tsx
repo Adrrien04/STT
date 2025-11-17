@@ -11,7 +11,7 @@ interface VoskMessage {
 }
 
 // --- URL du backend ---
-const WEBSOCKET_URL = "ws://localhost:8000/ws/transcribe";
+const WEBSOCKET_URL = "ws://localhost:8000/ws";
 
 function TranscriptionDisplay() {
     // --- STATES ---
@@ -38,22 +38,40 @@ function TranscriptionDisplay() {
         ws.onopen = () => setConnectionStatus("connected");
 
         ws.onmessage = (event) => {
-            try {
-                const data: VoskMessage = JSON.parse(event.data);
+            const msg = event.data;
 
+            // Ignore le message "Connected"
+            if (msg.startsWith("Connected")) return;
+
+            // Partial
+            if (msg.startsWith("Partial:")) {
+                const text = msg.replace("Partial:", "").trim();
+                setPartialTranscript(text);
+                return;
+            }
+
+            // Final transcription
+            if (msg.startsWith("Transcribed:")) {
+                const text = msg.replace("Transcribed:", "").trim();
+                setFinalTranscript(prev => prev + text + ". ");
+                setPartialTranscript("");
+                return;
+            }
+
+            // Si un jour tu envoies du JSON
+            try {
+                const data: VoskMessage = JSON.parse(msg);
                 if (data.type === "final") {
-                    const finalPhrase = data.text.trim();
-                    if (finalPhrase) {
-                        setFinalTranscript((prev) => prev + finalPhrase + ". ");
-                        setPartialTranscript("");
-                    }
+                    setFinalTranscript(prev => prev + data.text + ". ");
+                    setPartialTranscript("");
                 } else if (data.type === "partial") {
                     setPartialTranscript(data.text);
                 }
-            } catch (e) {
-                console.error("Erreur JSON:", e);
+            } catch {
+                console.warn("Message ignoré (pas du JSON) :", msg);
             }
         };
+
 
         ws.onerror = () => setConnectionStatus("disconnected");
 
@@ -168,17 +186,17 @@ function TranscriptionDisplay() {
 
             {isRecording && (
                 <div className="text-center text-danger fw-bold mb-3">
-          <span
-              style={{
-                  width: "10px",
-                  height: "10px",
-                  backgroundColor: "red",
-                  borderRadius: "50%",
-                  marginRight: "8px",
-                  display: "inline-block",
-                  animation: "blink 1s infinite",
-              }}
-          ></span>
+                    <span
+                        style={{
+                            width: "10px",
+                            height: "10px",
+                            backgroundColor: "red",
+                            borderRadius: "50%",
+                            marginRight: "8px",
+                            display: "inline-block",
+                            animation: "blink 1s infinite",
+                        }}
+                    ></span>
                     Micro activé...
                 </div>
             )}
@@ -203,12 +221,12 @@ function TranscriptionDisplay() {
             <p className="mt-3 text-center text-secondary">Propulsé par Vosk et FastAPI</p>
 
             <style>{`
-        @keyframes blink {
-          0% { opacity: 1; }
-          50% { opacity: 0.2; }
-          100% { opacity: 1; }
-        }
-      `}</style>
+                @keyframes blink {
+                    0% { opacity: 1; }
+                    50% { opacity: 0.2; }
+                    100% { opacity: 1; }
+                }
+            `}</style>
         </Container>
     );
 }
