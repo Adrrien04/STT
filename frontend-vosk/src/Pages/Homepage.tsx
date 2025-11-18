@@ -1,8 +1,13 @@
-import React from 'react';
-import { Row, Col, Card, Button } from 'react-bootstrap';
-import { Link } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Row, Col, Card, Button, Modal } from 'react-bootstrap';
+import TranscriptionDisplay from "./TranscriptionDisplay.tsx";
 
 const Homepage: React.FC = () => {
+    const [showModal, setShowModal] = useState(false);
+
+    const handleOpen = () => setShowModal(true);
+    const handleClose = () => setShowModal(false);
+
     return (
         <div className="mt-5 px-4">
 
@@ -17,12 +22,12 @@ const Homepage: React.FC = () => {
                     Cliquez sur le bouton ci-dessous pour démarrer l'outil de transcription.
                     Assurez-vous que le backend FastAPI est en cours d'exécution.
                 </p>
-                <Button as={Link} to="/transcription" variant="primary" size="lg">
+
+                <Button variant="primary" size="lg" onClick={handleOpen}>
                     Démarrer la Transcription
                 </Button>
             </div>
 
-            {/* Cartes en 3 colonnes */}
             <Row className="text-center">
                 <Col md={4}>
                     <Card className="shadow-sm mb-3">
@@ -60,6 +65,15 @@ const Homepage: React.FC = () => {
                     </Card>
                 </Col>
             </Row>
+
+            <Modal show={showModal} onHide={handleClose} size="lg" centered>
+                <Modal.Header closeButton>
+                    <Modal.Title>Transcription en Temps Réel</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <TranscriptionDisplay />
+                </Modal.Body>
+            </Modal>
         </div>
     );
 };

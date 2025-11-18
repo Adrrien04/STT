@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Container, Card, Alert, Spinner, Button } from "react-bootstrap";
+import { useState, useEffect, useRef } from "react";
+import { Card, Alert, Spinner, Button } from "react-bootstrap";
 import RecordRTC, { StereoAudioRecorder } from "recordrtc";
 
 // --- Types ---
@@ -40,17 +40,14 @@ function TranscriptionDisplay() {
         ws.onmessage = (event) => {
             const msg = event.data;
 
-            // Ignore le message "Connected"
             if (msg.startsWith("Connected")) return;
 
-            // Partial
             if (msg.startsWith("Partial:")) {
                 const text = msg.replace("Partial:", "").trim();
                 setPartialTranscript(text);
                 return;
             }
 
-            // Final transcription
             if (msg.startsWith("Transcribed:")) {
                 const text = msg.replace("Transcribed:", "").trim();
                 setFinalTranscript(prev => prev + text + ". ");
@@ -58,7 +55,6 @@ function TranscriptionDisplay() {
                 return;
             }
 
-            // Si un jour tu envoies du JSON
             try {
                 const data: VoskMessage = JSON.parse(msg);
                 if (data.type === "final") {
@@ -71,7 +67,6 @@ function TranscriptionDisplay() {
                 console.warn("Message ignoré (pas du JSON) :", msg);
             }
         };
-
 
         ws.onerror = () => setConnectionStatus("disconnected");
 
@@ -148,7 +143,8 @@ function TranscriptionDisplay() {
     };
 
     return (
-        <Container className="mt-5 px-4" style={{ maxWidth: "700px" }}>
+        <div className="mt-5 px-4 w-100" style={{ margin: 0 }}>
+
             <h1 className="text-center mb-4">🎙️ Transcription Vosk en Temps Réel</h1>
 
             <Alert
@@ -156,7 +152,7 @@ function TranscriptionDisplay() {
                 className="text-center d-flex align-items-center justify-content-center"
             >
                 {connectionStatus === "connecting" && (
-                    <Spinner animation="border" size="sm" className="me-2" />
+                    <Spinner animation="border" size="sm" className="me-2"/>
                 )}
                 {connectionStatus === "connected" && "Connecté."}
                 {connectionStatus === "disconnected" &&
@@ -201,9 +197,9 @@ function TranscriptionDisplay() {
                 </div>
             )}
 
-            <Card className="shadow-sm">
+            <Card className="shadow-sm w-100">
                 <Card.Body
-                    style={{ minHeight: "200px", whiteSpace: "pre-wrap", fontSize: "1.1rem" }}
+                    style={{minHeight: "200px", whiteSpace: "pre-wrap", fontSize: "1.1rem"}}
                 >
                     <span className="fw-bold text-dark">{finalTranscript}</span>
                     <span className="text-muted fst-italic">{partialTranscript}</span>
@@ -227,7 +223,7 @@ function TranscriptionDisplay() {
                     100% { opacity: 1; }
                 }
             `}</style>
-        </Container>
+        </div>
     );
 }
 
