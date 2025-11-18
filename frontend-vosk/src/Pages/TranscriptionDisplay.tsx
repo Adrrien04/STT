@@ -7,7 +7,7 @@ type ConnectionStatus = "connecting" | "connected" | "disconnected";
 
 interface VoskMessage {
     text: string;
-    type: "partial" | "final";
+    type: "partial" | "final" | "error";
 }
 
 // --- URL du backend ---
@@ -15,13 +15,12 @@ const WEBSOCKET_URL = "ws://localhost:8000/ws";
 
 function TranscriptionDisplay() {
     // --- STATES ---
-    const [connectionStatus, setConnectionStatus] =
-        useState<ConnectionStatus>("connecting");
+    const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("connecting");
     const [finalTranscript, setFinalTranscript] = useState<string>("");
     const [partialTranscript, setPartialTranscript] = useState<string>("");
     const [isRecording, setIsRecording] = useState<boolean>(false);
 
-    // --- REFS typés ---
+    // --- REFS ---
     const wsRef = useRef<WebSocket | null>(null);
     const recorder = useRef<RecordRTC | null>(null);
     const mediaStream = useRef<MediaStream | null>(null);
@@ -31,7 +30,6 @@ function TranscriptionDisplay() {
         if (wsRef.current) wsRef.current.close();
 
         setConnectionStatus("connecting");
-
         const ws = new WebSocket(WEBSOCKET_URL);
         wsRef.current = ws;
 
@@ -40,31 +38,23 @@ function TranscriptionDisplay() {
         ws.onmessage = (event) => {
             const msg = event.data;
 
+            // Ignorer les messages de connexion simples
             if (msg.startsWith("Connected")) return;
 
-            if (msg.startsWith("Partial:")) {
-                const text = msg.replace("Partial:", "").trim();
-                setPartialTranscript(text);
-                return;
-            }
-
-            if (msg.startsWith("Transcribed:")) {
-                const text = msg.replace("Transcribed:", "").trim();
-                setFinalTranscript(prev => prev + text + ". ");
-                setPartialTranscript("");
-                return;
-            }
-
             try {
+                // On essaie de parser le JSON venant du backend Python
                 const data: VoskMessage = JSON.parse(msg);
+
                 if (data.type === "final") {
-                    setFinalTranscript(prev => prev + data.text + ". ");
-                    setPartialTranscript("");
+                    // IMPORTANT : On ajoute au texte existant (prev) au lieu de remplacer
+                    setFinalTranscript(prev => prev + " " + data.text);
+                    setPartialTranscript(""); // On vide le partiel car il est devenu final
                 } else if (data.type === "partial") {
                     setPartialTranscript(data.text);
                 }
-            } catch {
-                console.warn("Message ignoré (pas du JSON) :", msg);
+            } catch (e) {
+                // Gestion fallback pour les anciens formats texte (si besoin)
+                console.warn("Format non JSON reçu ou erreur:", msg);
             }
         };
 
@@ -72,7 +62,12 @@ function TranscriptionDisplay() {
 
         ws.onclose = () => {
             setConnectionStatus("disconnected");
-            setTimeout(connectWebSocket, 5000);
+            // Reconnexion automatique après 3s
+            setTimeout(() => {
+                if (wsRef.current?.readyState === WebSocket.CLOSED) {
+                    connectWebSocket();
+                }
+            }, 3000);
         };
     };
 
@@ -82,15 +77,16 @@ function TranscriptionDisplay() {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaStream.current = stream;
 
-            setFinalTranscript("");
+            // CORRECTION ICI : On NE vide PAS finalTranscript
             setPartialTranscript("");
 
             const recorderInstance = new RecordRTC(stream, {
                 type: "audio",
                 mimeType: "audio/wav",
                 recorderType: StereoAudioRecorder,
-                sampleRate: 16000,
-                timeSlice: 3000,
+                sampleRate: 48000, // On peut laisser 48k, le backend convertira
+                numberOfAudioChannels: 1,
+                timeSlice: 1000, // Envoi toutes les 1s pour plus de fluidité
                 ondataavailable: (blob) => {
                     const reader = new FileReader();
                     reader.onload = () => {
@@ -107,38 +103,44 @@ function TranscriptionDisplay() {
             setIsRecording(true);
         } catch (error) {
             console.error("Micro error:", error);
+            alert("Impossible d'accéder au micro.");
         }
     };
 
     // --- STOP RECORDING ---
     const stopRecording = () => {
-        recorder.current?.stopRecording();
+        recorder.current?.stopRecording(() => {
+            // Callback optionnel à l'arrêt
+        });
         setIsRecording(false);
 
+        // Arrêter les pistes du micro (éteindre la lumière rouge du navigateur)
         mediaStream.current?.getTracks().forEach((t) => t.stop());
         mediaStream.current = null;
+    };
+
+    // --- CLEAR TEXT ---
+    const clearText = () => {
+        setFinalTranscript("");
+        setPartialTranscript("");
     };
 
     // --- ON MOUNT ---
     useEffect(() => {
         connectWebSocket();
         return () => {
-            wsRef.current?.close(1000, "Component unmounted");
+            wsRef.current?.close();
             stopRecording();
         };
     }, []);
 
-    // --- UI ---
+    // --- UI HELPERS ---
     const getStatusVariant = () => {
         switch (connectionStatus) {
-            case "connected":
-                return "success";
-            case "disconnected":
-                return "danger";
-            case "connecting":
-                return "warning";
-            default:
-                return "info";
+            case "connected": return "success";
+            case "disconnected": return "danger";
+            case "connecting": return "warning";
+            default: return "info";
         }
     };
 
@@ -154,72 +156,83 @@ function TranscriptionDisplay() {
                 {connectionStatus === "connecting" && (
                     <Spinner animation="border" size="sm" className="me-2"/>
                 )}
-                {connectionStatus === "connected" && "Connecté."}
+                {connectionStatus === "connected" && "Connecté au serveur IA."}
                 {connectionStatus === "disconnected" &&
                     "Déconnecté. Tentative de reconnexion... ⚠️"}
-                {connectionStatus === "connecting" && "Tentative de connexion..."}
             </Alert>
 
-            <div className="text-center mb-3">
+            <div className="text-center mb-3 d-flex justify-content-center gap-2">
                 <Button
                     variant="primary"
                     onClick={startRecording}
                     disabled={isRecording || connectionStatus !== "connected"}
-                    className="me-2"
                     size="lg"
                 >
-                    {isRecording ? "Enregistrement..." : "Commencer"}
+                    {isRecording ? "Enregistrement en cours..." : "▶️ Commencer"}
                 </Button>
+
                 <Button
                     variant="danger"
                     onClick={stopRecording}
                     disabled={!isRecording}
                     size="lg"
                 >
-                    Arrêter
+                    ⏹️ Arrêter
+                </Button>
+
+                <Button
+                    variant="outline-secondary"
+                    onClick={clearText}
+                    disabled={!finalTranscript && !partialTranscript}
+                    size="lg"
+                >
+                    🗑️ Effacer le texte
                 </Button>
             </div>
 
             {isRecording && (
                 <div className="text-center text-danger fw-bold mb-3">
-                    <span
-                        style={{
-                            width: "10px",
-                            height: "10px",
-                            backgroundColor: "red",
-                            borderRadius: "50%",
-                            marginRight: "8px",
-                            display: "inline-block",
-                            animation: "blink 1s infinite",
-                        }}
-                    ></span>
-                    Micro activé...
+                    <span className="recording-dot"></span>
+                    Micro activé
                 </div>
             )}
 
             <Card className="shadow-sm w-100">
                 <Card.Body
-                    style={{minHeight: "200px", whiteSpace: "pre-wrap", fontSize: "1.1rem"}}
+                    style={{
+                        minHeight: "200px",
+                        whiteSpace: "pre-wrap",
+                        fontSize: "1.1rem",
+                        backgroundColor: "#f8f9fa"
+                    }}
                 >
-                    <span className="fw-bold text-dark">{finalTranscript}</span>
-                    <span className="text-muted fst-italic">{partialTranscript}</span>
+                    <span className="text-dark">{finalTranscript}</span>
+                    <span className="text-muted fst-italic ms-2">{partialTranscript}</span>
 
                     {finalTranscript === "" &&
-                        partialTranscript === "" &&
-                        connectionStatus === "connected" && (
-                            <p className="text-secondary fst-italic">
-                                {isRecording ? "En attente de la parole..." : "Appuyez sur 'Commencer' et parlez."}
-                            </p>
+                        partialTranscript === "" && (
+                            <div className="text-center text-muted mt-5 opacity-50">
+                                <p>Le texte apparaîtra ici...</p>
+                            </div>
                         )}
                 </Card.Body>
             </Card>
 
-            <p className="mt-3 text-center text-secondary">Propulsé par Vosk et FastAPI</p>
+            <p className="mt-3 text-center text-secondary small">Propulsé par Vosk et FastAPI</p>
 
             <style>{`
+                .recording-dot {
+                    width: 10px;
+                    height: 10px;
+                    background-color: red;
+                    border-radius: 50%;
+                    display: inline-block;
+                    margin-right: 8px;
+                    animation: blink 1s infinite;
+                }
                 @keyframes blink {
                     0% { opacity: 1; }
-                    50% { opacity: 0.2; }
+                    50% { opacity: 0.3; }
                     100% { opacity: 1; }
                 }
             `}</style>
